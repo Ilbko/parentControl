@@ -9,11 +9,14 @@ public class Main {
 
     public static void main(String[] args) {
         //we instantiate the objects
-        ti = new TextInputObject();
-        to = new TextOutputObject();
+        //ti = new TextInputObject();
+        //to = new TextOutputObject();
         //we call the start method to start the threads for input and output
-        ti.start();
-        to.start();
+        //ti.start();
+       //to.start();
+
+        String path = "E:/WinRAR/WinRAR.exe";
+        System.out.println(path.contains("WinRAR"));
     }
 
     //TextInputObject class

@@ -3,24 +3,22 @@ package com.company.server;
 import com.company.CommandType;
 import com.company.ProcessClass;
 import com.company.ProcessCommand;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectWriter;
-import org.json.JSONObject;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 
 public class Server {
     private ServerSocket serverSocket;
     private ObjectMapper objectMapper;
     private List<Client> clients;
+
+    private List<ProcessRule> processRules;
+    private Date todayDate;
 
     private Scanner scanner;
 
@@ -31,6 +29,8 @@ public class Server {
         serverSocket = new ServerSocket(3000);
         objectMapper = new ObjectMapper();
         clients = new ArrayList<Client>();
+        processRules = new ArrayList<ProcessRule>();
+        todayDate = new Date();
 
         scanner = new Scanner(System.in);
 
@@ -39,7 +39,45 @@ public class Server {
         outputThread = new Thread(new TextOutputRunnable());
         outputThread.start();
 
+        CheckRules();
         Listener();
+    }
+
+    public void CheckRules() {
+        TimerTask task = new TimerTask() {
+            public void run() {
+                try {
+                    processRules.forEach(processRule -> {
+                        processRule.client.processes.forEach(processClass -> {
+                            if (processClass.name.contains(processRule.processClass.name))
+                                processRule.elapsedTimeMinutes += 0.5;
+                        });
+                        if (processRule.processClass.timeMinutes <= processRule.elapsedTimeMinutes) {
+                            try {
+                                SendCommand(processRule.client, new ProcessCommand(processRule.processClass, CommandType.CLOSE));
+                                processRules.remove(processRule);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    });
+                if (todayDate.getDay() != new Date().getDay()){
+                    TextOutputRunnable.output = "Day changed, clearing rules...";
+                    processRules.clear();
+                    todayDate = new Date();
+                }
+                    TextOutputRunnable.output = "Timer ticked! (0.5 minutes)";
+                } catch (RuntimeException e){
+                    TextOutputRunnable.output = e.toString();
+                    return;
+                }
+                CheckRules();
+            }
+        };
+        Timer timer = new Timer("ServerTimer");
+
+        long delay = 30000L;
+        timer.schedule(task, delay);
     }
 
     public void SelectUser() throws IOException {
@@ -53,7 +91,12 @@ public class Server {
             }
 
             System.out.println("0 to exit. ");
-            menu = Integer.parseInt(scanner.nextLine());
+
+            try {
+                menu = Integer.parseInt(scanner.nextLine());
+            } catch (NumberFormatException e) {
+                return;
+            }
             if (menu == 0)
                 return;
         } while (menu < 1 || menu > clients.size());
@@ -71,6 +114,7 @@ public class Server {
                     "\n2. Open a process;" +
                     "\n3. Close a process;" +
                     "\n4. Set a timer;" +
+                    "\n5. List timer rules;" +
                     "\n0 to exit. ";
             TextOutputRunnable.output = String.valueOf(TextInputRunnable.isListening);
             menu = Integer.parseInt(scanner.nextLine());
@@ -78,7 +122,7 @@ public class Server {
                 TextInputRunnable.isListening = true;
                 return;
             }
-        } while (menu < 1 || menu > 4);
+        } while (menu < 1 || menu > 5);
 
         ExecuteCommand(client, menu);
     }
@@ -120,9 +164,18 @@ public class Server {
                 timeMinutes = Integer.parseInt(scanner.nextLine());
 
                 processClass = new ProcessClass(processName, timeMinutes);
-                processCommand = new ProcessCommand(processClass, CommandType.TIMER);
+                //processCommand = new ProcessCommand(processClass, CommandType.TIMER);
 
-                SendCommand(client, processCommand);
+                processRules.add(new ProcessRule(client, processClass, 0));
+
+                //SendCommand(client, processCommand);
+                break;
+            }
+            case 5: {
+                processRules.forEach(processRule -> {
+                    if (processRule.client == client)
+                        System.out.println(processRule.toString());
+                });
                 break;
             }
         }
@@ -132,7 +185,7 @@ public class Server {
 
     public void SendCommand(Client client, ProcessCommand processCommand) throws IOException {
         client.outputStream.writeUTF(objectMapper.writeValueAsString(processCommand));
-        TextOutputRunnable.output = "Command sent." + objectMapper.writeValueAsString(processCommand);
+        TextOutputRunnable.output = "Command sent. " + objectMapper.writeValueAsString(processCommand);
     }
 
     public void Listener() throws IOException {
@@ -177,7 +230,6 @@ public class Server {
 
     public void PrintProcesses(Client client) {
         client.processes.forEach(process -> System.out.println(process.name));
-        //client.processes.forEach(process -> TextOutputRunnable.output = process.name);
     }
 
     private class TextOutputRunnable implements Runnable {
