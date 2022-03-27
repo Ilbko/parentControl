@@ -10,6 +10,7 @@ import java.util.List;
 
 public class Client {
     public Socket clientSocket;
+    public String hostName;
     public List<ProcessClass> processes;
     public DataInputStream inputStream;
     public DataOutputStream outputStream;
