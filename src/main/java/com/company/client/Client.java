@@ -42,7 +42,7 @@ public class Client {
                 Integer.parseInt(json.get("port").toString())));
     }
 
-    public void TimerMethod(){
+    public void TimerMethod() {
         System.out.println("Timer started.");
         TimerTask task = new TimerTask(){
             public void run() {
@@ -105,7 +105,7 @@ public class Client {
             case CLOSE -> {
                 ProcessHandle.allProcesses().forEach(process -> {
                     Optional<String> name = process.info().command();
-                    if (name.isPresent() && name.get().contains(processCommand.data.name))
+                    if (name.isPresent() && name.get().toLowerCase(Locale.ROOT).contains(processCommand.data.name))
                         process.destroyForcibly();
                 });
             }

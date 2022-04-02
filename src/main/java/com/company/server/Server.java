@@ -5,7 +5,11 @@ import com.company.ProcessClass;
 import com.company.ProcessCommand;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
+import org.json.simple.parser.ParseException;
 
+import java.io.FileReader;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -25,7 +29,7 @@ public class Server {
     private Thread inputThread;
     private Thread outputThread;
 
-    public Server() throws IOException {
+    public Server() throws IOException, ParseException {
         serverSocket = new ServerSocket(3000);
         objectMapper = new ObjectMapper();
         clients = new ArrayList<Client>();
@@ -34,13 +38,32 @@ public class Server {
 
         scanner = new Scanner(System.in);
 
-        inputThread = new Thread(new TextInputRunnable());
-        inputThread.start();
         outputThread = new Thread(new TextOutputRunnable());
         outputThread.start();
 
+        TextOutputRunnable.output = "Connecting to database...";
+        GetSettingsAndConnectDB();
+
+        inputThread = new Thread(new TextInputRunnable());
+        inputThread.start();
+
         CheckRules();
         Listener();
+    }
+
+    public void OutputAndLog(String data, Client client) {
+        TextOutputRunnable.output = data + " (" + client.clientSocket.getInetAddress().getHostName() + ": " + client.hostName + ")";
+        Logger.Log(data, client);
+    }
+
+    public void GetSettingsAndConnectDB() throws IOException, ParseException {
+        JSONParser parser = new JSONParser();
+        JSONObject json = (JSONObject) parser.parse(
+                new FileReader("./src/main/resources/settings.json"));
+
+        TextOutputRunnable.output = Logger.Connect(json.get("dbip").toString(),
+                json.get("dblogin").toString(),
+                json.get("dbpassword").toString());
     }
 
     public void CheckRules() {
@@ -49,13 +72,12 @@ public class Server {
                 try {
                     processRules.forEach(processRule -> {
                         processRule.client.processes.forEach(processClass -> {
-                            if (processClass.name.contains(processRule.processClass.name))
+                            if (processClass.name.toLowerCase(Locale.ROOT).contains(processRule.processClass.name))
                                 processRule.elapsedTimeMinutes += 0.5;
                         });
                         if (processRule.processClass.timeMinutes <= processRule.elapsedTimeMinutes) {
                             try {
                                 SendCommand(processRule.client, new ProcessCommand(processRule.processClass, CommandType.CLOSE));
-                                processRules.remove(processRule);
                             } catch (IOException e) {
                                 e.printStackTrace();
                             }
@@ -145,16 +167,18 @@ public class Server {
                 processCommand = new ProcessCommand(processClass, CommandType.OPEN);
 
                 SendCommand(client, processCommand);
+                OutputAndLog("Started a process " + processClass.name, client);
                 break;
             }
             case 3: {
                 TextOutputRunnable.output = "Enter process name: ";
                 processName = scanner.nextLine();
 
-                processClass = new ProcessClass(processName);
+                processClass = new ProcessClass(processName.toLowerCase(Locale.ROOT));
                 processCommand = new ProcessCommand(processClass, CommandType.CLOSE);
 
                 SendCommand(client, processCommand);
+                OutputAndLog("Closed a process " + processClass.name, client);
                 break;
             }
             case 4: {
@@ -163,11 +187,11 @@ public class Server {
                 TextOutputRunnable.output = "Enter process maximum uptime (minutes): ";
                 timeMinutes = Integer.parseInt(scanner.nextLine());
 
-                processClass = new ProcessClass(processName, timeMinutes);
+                processClass = new ProcessClass(processName.toLowerCase(Locale.ROOT), timeMinutes);
                 //processCommand = new ProcessCommand(processClass, CommandType.TIMER);
 
                 processRules.add(new ProcessRule(client, processClass, 0));
-
+                OutputAndLog("Created a rule for " + processClass.name + ": " + Integer.toString(timeMinutes) + " minutes.", client);
                 //SendCommand(client, processCommand);
                 break;
             }
@@ -185,20 +209,22 @@ public class Server {
 
     public void SendCommand(Client client, ProcessCommand processCommand) throws IOException {
         client.outputStream.writeUTF(objectMapper.writeValueAsString(processCommand));
-        TextOutputRunnable.output = "Command sent. " + objectMapper.writeValueAsString(processCommand);
+        //TextOutputRunnable.output = "Command sent. " + objectMapper.writeValueAsString(processCommand);
+        OutputAndLog(processCommand.commandType.toString() + " command sent.", client);
     }
 
     public void Listener() throws IOException {
         TextOutputRunnable.output = "Listening for clients...";
-        while(true) {
+        while (true) {
             Socket clientSocket = serverSocket.accept();
 
             clients.add(new Client(clientSocket));
             Client joinedClient = clients.get(clients.size() - 1);
             joinedClient.hostName = joinedClient.inputStream.readUTF();
 
-            TextOutputRunnable.output = "Client connected at " + joinedClient.clientSocket.getInetAddress().getHostName() +
-                    ": " + joinedClient.hostName;
+            /*TextOutputRunnable.output = "Client connected at " + joinedClient.clientSocket.getInetAddress().getHostName() +
+                    ": " + joinedClient.hostName;*/
+            OutputAndLog("Client connected.", joinedClient);
 
             new Thread(() -> {
                 try {
@@ -221,8 +247,9 @@ public class Server {
                 }
             } catch (SocketException e) {
                 clients.remove(client);
-                TextOutputRunnable.output = "Client disconnected at " + client.clientSocket.getInetAddress().getHostName() +
-                        ": " + client.hostName;
+                /*TextOutputRunnable.output = "Client disconnected at " + client.clientSocket.getInetAddress().getHostName() +
+                        ": " + client.hostName;*/
+                OutputAndLog("Client disconnected.", client);
                 return;
             }
         }
